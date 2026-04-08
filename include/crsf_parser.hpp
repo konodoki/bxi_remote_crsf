@@ -6,11 +6,10 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <vector>
 using namespace itas109;
 namespace fs = std::filesystem;
-// ============================================================
-// CRSF 协议常量（独立出来，方便复用）
-// ============================================================
+
 namespace CRSF
 {
 static constexpr uint8_t SYNC_BYTE = 0xC8;
@@ -19,24 +18,13 @@ static constexpr uint8_t FRAMETYPE_RC_CHANNELS_PACKED = 0x16;
 static constexpr uint8_t FRAMETYPE_LINK_STATISTICS = 0x14;
 static constexpr uint8_t FRAMETYPE_GPS = 0x02;
 static constexpr uint8_t FRAMETYPE_BATTERY_SENSOR = 0x08;
+static constexpr uint8_t FRAMETYPE_HEARTBEAT = 0x0B;
 
-// 标准 Link Statistics 帧字段偏移（10字节 payload）
 static constexpr int LS_UPLINK_RSSI_1 = 0;
-static constexpr int LS_UPLINK_RSSI_2 = 1;
 static constexpr int LS_UPLINK_LQ = 2;
-static constexpr int LS_UPLINK_SNR = 3;
-static constexpr int LS_ACTIVE_ANT = 4;
-static constexpr int LS_RF_MODE = 5;
-static constexpr int LS_TX_POWER = 6;
-static constexpr int LS_DOWNLINK_RSSI = 7;
-static constexpr int LS_DOWNLINK_LQ = 8;
-static constexpr int LS_DOWNLINK_SNR = 9;
 static constexpr int LS_PAYLOAD_SIZE = 10;
 }
 
-// ============================================================
-// CRSFParser
-// ============================================================
 class CRSFParser : public CSerialPortListener,
                    public CSerialPortHotPlugListener {
 public:
@@ -48,6 +36,7 @@ public:
     {
         buildCRCTable();
         port_ = get_real_serial_port(port_);
+
         auto ports = CSerialPortInfo::availablePortInfos();
         printf("AvailableFriendlyPorts:\n");
         bool has_port = false;
@@ -70,48 +59,160 @@ public:
     }
 
 private:
-    /**
-     * 获取串口的真实路径
-     * @param port_path 传入的路径（如 "/dev/ttyCRSF"）
-     * @return 如果是软链接则返回真实路径（如 "/dev/ttyUSB0"），否则返回原路径
-     */
-    std::string get_real_serial_port(const std::string &port_path)
-    {
-        try {
-            fs::path path(port_path);
-
-            // 1. 检查文件是否存在
-            if (!fs::exists(path)) {
-                return port_path;
-            }
-
-            // 2. 检查是否是符号链接（软链接）
-            if (fs::is_symlink(path)) {
-                // fs::canonical 会解析路径中所有的符号链接并返回绝对路径
-                std::cout << "真实路径:" << fs::canonical(path).string()
-                          << std::endl;
-                return fs::canonical(path).string();
-            }
-        } catch (const fs::filesystem_error &e) {
-            // 如果发生权限错误或其他系统错误，返回原始路径
-            // 这样可以防止程序因为获取不到真实路径而直接崩溃
-            std::cerr << "FS Error: " << e.what() << std::endl;
-        }
-
-        return port_path;
-    }
     // ----------------------------------------------------------
-    // 串口事件（在 CSerialPort 内部线程中被调用）
+    // 串口事件：收到数据 → 追加到 buffer → 解析
     // ----------------------------------------------------------
     void onReadEvent(const char * /*portName*/,
                      unsigned int /*readBufferLen*/) override
     {
-        uint8_t buf[4096];
-        int n = sp_.readData(buf, sizeof(buf));
-        if (n > 0)
-            parseBuffer(buf, n);
+        uint8_t tmp[4096];
+        int n = sp_.readData(tmp, sizeof(tmp));
+        if (n <= 0)
+            return;
+
+        // 追加到滑动缓冲区
+        buffer_.insert(buffer_.end(), tmp, tmp + n);
+        processBuffer();
     }
 
+    // ----------------------------------------------------------
+    // 核心解析：从缓冲区里不断提取完整的 CRSF 帧
+    //
+    // CRSF 帧格式：
+    //   [0]      SYNC  = 0xC8
+    //   [1]      LENGTH（后续字节数，含 TYPE + PAYLOAD + CRC）
+    //   [2]      TYPE
+    //   [3..N-1] PAYLOAD（LENGTH-2 字节）
+    //   [N]      CRC（对 TYPE+PAYLOAD 做 CRC-8/DVB-S2）
+    //
+    // 最小完整帧 = 1(SYNC) + 1(LEN) + LENGTH 字节
+    // ----------------------------------------------------------
+    void processBuffer()
+    {
+        while (!buffer_.empty()) {
+            // 1. 找 SYNC 字节
+            if (buffer_[0] != CRSF::SYNC_BYTE) {
+                buffer_.erase(buffer_.begin()); // 丢弃错位字节，继续找头
+                continue;
+            }
+
+            // 2. 等够 2 个字节才能读到 LENGTH
+            if (buffer_.size() < 2)
+                break;
+
+            uint8_t length = buffer_[1];
+
+            // 合法性检查：LENGTH 表示 TYPE+PAYLOAD+CRC，至少 3 字节
+            if (length < 3 || length > CRSF::MAX_FRAME_SIZE) {
+                buffer_.erase(buffer_.begin()); // 非法 length，丢掉这个 SYNC
+                continue;
+            }
+
+            // 3. 完整帧 = SYNC(1) + LENGTH(1) + length 字节，等数据凑够再处理
+            size_t frame_total = 2 + length;
+            if (buffer_.size() < frame_total)
+                break;
+
+            // 4. 取出各字段
+            uint8_t frame_type = buffer_[2];
+            size_t payload_len = length - 2; // 去掉 TYPE 和 CRC
+            const uint8_t *payload = buffer_.data() + 3; // payload 起始
+            uint8_t crc_received = buffer_[2 + length - 1]; // 帧最后一字节
+
+            // 5. 校验 CRC（覆盖 TYPE + PAYLOAD）
+            uint8_t crc_calc =
+                crc8Bulk(payload - 1, payload_len + 1, 0); // 从 TYPE 开始
+            if (crc_calc != crc_received) {
+                if (debug_)
+                    printf("CRC 校验失败: 期望 0x%02X, 实际 0x%02X\n", crc_calc,
+                           crc_received);
+                buffer_.erase(buffer_.begin()); // CRC 错就丢掉这个 SYNC，重新找
+                continue;
+            }
+
+            // 6. CRC 通过，处理帧
+            processFrame(frame_type, payload, payload_len);
+
+            // 7. 从缓冲区移除这一整帧
+            buffer_.erase(buffer_.begin(), buffer_.begin() + frame_total);
+        }
+    }
+
+    // ----------------------------------------------------------
+    // 帧分发
+    // ----------------------------------------------------------
+    void processFrame(uint8_t type, const uint8_t *payload, size_t payload_len)
+    {
+        switch (type) {
+        case CRSF::FRAMETYPE_RC_CHANNELS_PACKED:
+            processRCChannels(payload, payload_len);
+            break;
+        case CRSF::FRAMETYPE_LINK_STATISTICS:
+            processLinkStatistics(payload, payload_len);
+            break;
+        case CRSF::FRAMETYPE_GPS:
+            if (debug_)
+                printf("GPS 帧\n");
+            break;
+        case CRSF::FRAMETYPE_BATTERY_SENSOR:
+            if (debug_)
+                printf("电池帧\n");
+            break;
+        case CRSF::FRAMETYPE_HEARTBEAT:
+            printf("心跳\n");
+            break;
+        default:
+            if (debug_)
+                printf("未知帧类型: 0x%02X\n", type);
+            break;
+        }
+    }
+
+    void processRCChannels(const uint8_t *payload, size_t payload_len)
+    {
+        if (payload_len < 22)
+            return; // RC 通道固定 22 字节
+
+        const uint8_t *p = payload;
+        uint32_t bits = 0;
+        uint8_t bit_cnt = 0;
+        for (int ch = 0; ch < 16; ch++) {
+            while (bit_cnt < 11) {
+                bits |= static_cast<uint32_t>(*p++) << bit_cnt;
+                bit_cnt += 8;
+            }
+            channels_[ch] = bits & 0x7FFu;
+            bits >>= 11;
+            bit_cnt -= 11;
+        }
+        channel_cb_(channels_);
+    }
+
+    void processLinkStatistics(const uint8_t *payload, size_t payload_len)
+    {
+        if (payload_len < static_cast<size_t>(CRSF::LS_PAYLOAD_SIZE)) {
+            if (debug_)
+                printf("Link Statistics 帧长度不足: %zu\n", payload_len);
+            return;
+        }
+        uint8_t rssi_dbm = payload[CRSF::LS_UPLINK_RSSI_1];
+        uint8_t link_quality = payload[CRSF::LS_UPLINK_LQ];
+
+        rssi_dbm_ = rssi_dbm;
+        link_quality_ = link_quality;
+
+        bool new_failsafe = (link_quality_ < 20 || rssi_dbm_ > 110);
+        if (new_failsafe != failsafe_) {
+            failsafe_ = new_failsafe;
+            printf(failsafe_ ? "⚠️  失控保护激活! LQ: %d%%, RSSI: -%d dBm\n" :
+                               "✅  链路恢复. LQ: %d%%, RSSI: -%d dBm\n",
+                   link_quality_, rssi_dbm_);
+        }
+    }
+
+    // ----------------------------------------------------------
+    // 热插拔 & 开启
+    // ----------------------------------------------------------
     void onHotPlugEvent(const char *portName, int isAdd) override
     {
         printf("热插拔: %s %s\n", portName, isAdd ? "插入" : "拔出");
@@ -121,6 +222,7 @@ private:
             tryOpen();
         else {
             sp_.close();
+            buffer_.clear(); // 断开时清空缓冲区，防止脏数据残留
             printf("串口已关闭: %s\n", port_.c_str());
         }
     }
@@ -136,144 +238,23 @@ private:
         }
     }
 
-    // ----------------------------------------------------------
-    // 状态机解析（顺序与帧格式一致：SYNC→LENGTH→TYPE→PAYLOAD→CRC）
-    // ----------------------------------------------------------
-    enum ParserState : uint8_t {
-        STATE_SYNC,
-        STATE_LENGTH,
-        STATE_TYPE,
-        STATE_PAYLOAD,
-        STATE_CRC
-    };
-
-    void parseBuffer(const uint8_t *buf, int len)
+    std::string get_real_serial_port(const std::string &port_path)
     {
-        int i = 0;
-        while (i < len) {
-            switch (parser_state_) {
-            case STATE_SYNC:
-                while (i < len && buf[i] != CRSF::SYNC_BYTE)
-                    i++;
-                if (i < len) {
-                    parser_state_ = STATE_LENGTH;
-                    crc_accum_ = 0;
-                    data_index_ = 0;
-                    i++;
-                }
-                break;
-
-            case STATE_LENGTH:
-                frame_length_ = buf[i++];
-                // 合法帧：payload+type+crc 至少3字节，最多MAX_FRAME_SIZE
-                if (frame_length_ > 2 && frame_length_ <= CRSF::MAX_FRAME_SIZE)
-                    parser_state_ = STATE_TYPE;
-                else
-                    parser_state_ = STATE_SYNC;
-                break;
-
-            case STATE_TYPE:
-                frame_type_ = buf[i++];
-                crc_accum_ = crc_table_[frame_type_];
-                parser_state_ = STATE_PAYLOAD;
-                break;
-
-            case STATE_PAYLOAD: {
-                // payload 长度 = frame_length_ - 2（TYPE 和 CRC 各1字节）
-                size_t payload_total = frame_length_ - 2;
-                size_t remaining = payload_total - data_index_;
-                size_t available = static_cast<size_t>(len - i);
-                size_t chunk = std::min(remaining, available);
-
-                memcpy(frame_buffer_ + data_index_, buf + i, chunk);
-                crc_accum_ = crc8Bulk(buf + i, chunk, crc_accum_);
-                data_index_ += chunk;
-                i += static_cast<int>(chunk);
-
-                if (data_index_ >= payload_total)
-                    parser_state_ = STATE_CRC;
-                break;
+        try {
+            fs::path path(port_path);
+            if (!fs::exists(path))
+                return port_path;
+            if (fs::is_symlink(path)) {
+                std::cout << "真实路径:" << fs::canonical(path).string()
+                          << std::endl;
+                return fs::canonical(path).string();
             }
-
-            case STATE_CRC:
-                if (crc_accum_ == buf[i])
-                    processFrame();
-                else if (debug_)
-                    printf("CRC 校验失败: 期望 0x%02X, 实际 0x%02X\n",
-                           crc_accum_, buf[i]);
-                i++;
-                parser_state_ = STATE_SYNC;
-                break;
-            }
+        } catch (const fs::filesystem_error &e) {
+            std::cerr << "FS Error: " << e.what() << std::endl;
         }
+        return port_path;
     }
 
-    // ----------------------------------------------------------
-    // 帧处理
-    // ----------------------------------------------------------
-    void processFrame()
-    {
-        switch (frame_type_) {
-        case CRSF::FRAMETYPE_RC_CHANNELS_PACKED:
-            processRCChannels();
-            break;
-        case CRSF::FRAMETYPE_LINK_STATISTICS:
-            processLinkStatistics();
-            break;
-        case CRSF::FRAMETYPE_GPS:
-            if (debug_)
-                printf("GPS 帧\n");
-            break;
-        case CRSF::FRAMETYPE_BATTERY_SENSOR:
-            if (debug_)
-                printf("电池帧\n");
-            break;
-        default:
-            if (debug_)
-                printf("未知帧类型: 0x%02X\n", frame_type_);
-            break;
-        }
-    }
-
-    void processRCChannels()
-    {
-        // CRSF RC 通道：16 × 11bit，紧密排列，共 22 字节
-        const uint8_t *p = frame_buffer_;
-        uint32_t bits = 0;
-        uint8_t bit_cnt = 0;
-        for (int ch = 0; ch < 16; ch++) {
-            while (bit_cnt < 11) {
-                bits |= static_cast<uint32_t>(*p++) << bit_cnt;
-                bit_cnt += 8;
-            }
-            channels_[ch] = bits & 0x7FFu;
-            bits >>= 11;
-            bit_cnt -= 11;
-        }
-        channel_cb_(channels_);
-    }
-
-    void processLinkStatistics()
-    {
-        // 修正：按照标准 CRSF Link Statistics 帧格式解析
-        if (data_index_ < static_cast<size_t>(CRSF::LS_PAYLOAD_SIZE)) {
-            if (debug_)
-                printf("Link Statistics 帧长度不足: %zu\n", data_index_);
-            return;
-        }
-        uint8_t uplink_rssi_1 = frame_buffer_[CRSF::LS_UPLINK_RSSI_1]; // -dBm
-        link_quality_ = frame_buffer_[CRSF::LS_UPLINK_LQ]; // 0~100%
-        rssi_dbm_ = uplink_rssi_1;
-
-        // 失控保护：LQ < 20% 或 RSSI > 110dBm（即信号强度低于 -110dBm）
-        bool new_failsafe = (link_quality_ < 20 || rssi_dbm_ > 110);
-        if (new_failsafe != failsafe_) {
-            failsafe_ = new_failsafe;
-            printf(failsafe_ ? "⚠️  失控保护激活! LQ: %d%%, RSSI: -%d dBm\n" :
-                               "✅  链路恢复. LQ: %d%%, RSSI: -%d dBm\n",
-                   link_quality_, rssi_dbm_);
-        }
-    }
     // ----------------------------------------------------------
     // CRC-8/DVB-S2 (poly 0xD5)
     // ----------------------------------------------------------
@@ -301,16 +282,8 @@ private:
     // ----------------------------------------------------------
     CSerialPort sp_;
     std::function<void(uint16_t[])> channel_cb_;
+    std::vector<uint8_t> buffer_; // 滑动接收缓冲区
 
-    // 解析器状态
-    ParserState parser_state_ = STATE_SYNC;
-    uint8_t frame_type_ = 0;
-    uint8_t frame_length_ = 0;
-    uint8_t frame_buffer_[CRSF::MAX_FRAME_SIZE]{};
-    size_t data_index_ = 0;
-    uint8_t crc_accum_ = 0;
-
-    // 通道 & 链路
     uint16_t channels_[16]{};
     uint8_t link_quality_ = 100;
     uint8_t rssi_dbm_ = 0;
