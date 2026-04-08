@@ -71,7 +71,6 @@ private:
                 reset_value();
                 launch_lock = true;
                 RCLCPP_INFO(this->get_logger(), "启动程序");
-                print_channel();
             }
         }
         // 停止程序
@@ -85,7 +84,6 @@ private:
                 launch_lock = false;
                 reset_value();
                 RCLCPP_INFO(this->get_logger(), "杀死程序");
-                print_channel();
             }
         }
         // pd模式
@@ -93,7 +91,6 @@ private:
         if (pd_channel_last < 0 && channels[PD_CHANNEL] > 0) {
             pd_brake_mode = !pd_brake_mode;
             RCLCPP_INFO(this->get_logger(), "切换为PD");
-            print_channel();
         }
         pd_channel_last = channels[PD_CHANNEL];
         // 走路模式切换
@@ -105,15 +102,12 @@ private:
             if (mode_now < 0) {
                 initial_pos_mode = !initial_pos_mode;
                 RCLCPP_INFO(this->get_logger(), "切换为零位");
-                print_channel();
             } else if (mode_now == 0) {
                 normal_mode = !normal_mode;
                 RCLCPP_INFO(this->get_logger(), "切换为普通");
-                print_channel();
             } else if (mode_now > 0) {
                 amp_run_mode = !amp_run_mode;
                 RCLCPP_INFO(this->get_logger(), "切换为跑步");
-                print_channel();
             }
         }
         mode_last = mode_now;
