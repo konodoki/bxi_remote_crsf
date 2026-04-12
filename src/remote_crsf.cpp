@@ -1,12 +1,12 @@
-#include <cstdio>
+#include <communication/msg/motion_commands.hpp>
 #include <crsf_parser.hpp>
+#include <cstdio>
 #include <memory>
+#include <mutex>
 #include <rclcpp/executors.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/node.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <communication/msg/motion_commands.hpp>
-#include <mutex>
 using namespace std::chrono_literals;
 #define CRSR_MAX 1811
 #define CRSR_MIN 174
@@ -19,9 +19,9 @@ void crsf_callback(uint16_t channels_[])
     const std::lock_guard<std::mutex> guard(channel_lock);
     for (int i = 0; i < 16; i++) {
         channels[i] = (channels_[i] - CRSR_MID) / CRSR_SCALE;
-        printf("%.2f ", channels[i]);
+        // printf("%.2f ", channels[i]);
     }
-    printf("\n");
+    // printf("\n");
 }
 void print_channel()
 {
@@ -66,9 +66,11 @@ private:
             if (launch_lock == false) {
                 system("mkdir -p /var/log/bxi_log");
                 system(
-                    "ros2 launch bxi_example_py_elf3 example_launch_demo_hw.py > /var/log/bxi_log/$(date +%Y-%m-%d_%H-%M-%S)_elf.log  2>&1 &");
+                    "ros2 launch bxi_example_py_elf3 example_launch_demo_hw.py > "
+                    "/var/log/bxi_log/$(date +%Y-%m-%d_%H-%M-%S)_elf.log  2>&1 &");
                 system(
-                    "ros2 launch bxi_example_bms bms.launch.py > /var/log/bxi_log/bms_$(date +%Y-%m-%d_%H-%M-%S)_bms.log 2>&1 &");
+                    "ros2 launch bxi_example_bms bms.launch.py > "
+                    "/var/log/bxi_log/bms_$(date +%Y-%m-%d_%H-%M-%S)_bms.log 2>&1 &");
                 reset_value();
                 launch_lock = true;
                 RCLCPP_INFO(this->get_logger(), "启动程序");
@@ -116,8 +118,8 @@ private:
         { // initialize a ROS2 message
             const std::lock_guard<std::mutex> guard(channel_lock);
             velxy[0] = channels[VELX_CHANNEL];
-            velxy[1] = channels[VELY_CHANNEL];
-            velr = channels[VELR_CHANNEL];
+            velxy[1] = -channels[VELY_CHANNEL];
+            velr = -channels[VELR_CHANNEL];
             velxy[0] = fabs(velxy[0]) > AXIS_DEAD_ZONE ? velxy[0] : 0;
             velxy[1] = fabs(velxy[1]) > AXIS_DEAD_ZONE ? velxy[1] : 0;
             velr = fabs(velr) > AXIS_DEAD_ZONE ? velr : 0;
@@ -207,7 +209,7 @@ private:
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    CRSFParser crsf("/dev/ttyACM0", 420000, crsf_callback);
+    CRSFParser crsf("/dev/ttyCRSF", 420000, crsf_callback);
     rclcpp::spin(std::make_shared<CRSFRemote>());
     rclcpp::shutdown();
     return 0;
