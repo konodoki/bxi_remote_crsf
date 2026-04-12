@@ -109,7 +109,6 @@ public:
         while (1) {
             js_fd = open(_js_dev_name, O_RDONLY); // O_NONBLOCK
             if (js_fd < 0) {
-                printf("open:%s failed\n", _js_dev_name);
                 sleep(1);
             } else {
                 printf("open js dev: %s\n", _js_dev_name);
