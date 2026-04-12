@@ -36,6 +36,7 @@ using namespace std;
 #define STAND_HEIGHT_MAX 3.0
 
 // ===================== 手柄(JS)宏定义 =====================
+#define JS_PATH "/dev/input/js0"
 #if 0 // PS4 JS
 #define JS_VELX_AXIS 4
 #define JS_VELX_AXIS_DIR -1
@@ -72,6 +73,7 @@ using namespace std;
 #endif
 
 // ===================== CRSF宏定义 =====================
+#define CRSF_PATH "/dev/ttyCRSF"
 #define CRSR_MAX 1811
 #define CRSR_MIN 174
 static constexpr float CRSR_MID = (CRSR_MAX + CRSR_MIN) * 0.5f;
@@ -114,13 +116,13 @@ public:
 
         // 初始化CRSF
         crsf_parser_ = std::make_shared<CRSFParser>(
-            "/dev/ttyCRSF", 420000,
+            CRSF_PATH, 420000,
             std::bind(&RemoteControlNode::crsf_callback, this,
                       std::placeholders::_1));
         crsf_last_rec_time_ = std::chrono::high_resolution_clock::now();
 
         // 初始化手柄
-        js_fd_ = open("/dev/input/js0", O_RDONLY);
+        js_fd_ = open(JS_PATH, O_RDONLY);
         if (js_fd_ < 0) {
             RCLCPP_WARN(this->get_logger(),
                         "Failed to open joystick, will retry...");
@@ -164,7 +166,7 @@ private:
     bool LB_press_ = false;
     bool RB_press_ = false;
 
-    // 控制状态（统一管理）
+    // 控制状态
     std::mutex state_mutex_;
     double velxy_[2] = { 0 }; // 原始速度
     double velxy_filt_[2] = { 0 }; // 滤波后速度
@@ -215,7 +217,7 @@ private:
                             "Joystick disconnected, retrying...");
                 close(js_fd_);
                 while (rclcpp::ok() && js_fd_ < 0) {
-                    js_fd_ = open("/dev/input/js0", O_RDONLY);
+                    js_fd_ = open(JS_PATH, O_RDONLY);
                     if (js_fd_ < 0)
                         sleep(1);
                 }
