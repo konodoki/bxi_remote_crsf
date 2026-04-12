@@ -1,5 +1,7 @@
 #include <chrono>
+#include <communication/msg/detail/battery_states__struct.hpp>
 #include <communication/msg/motion_commands.hpp>
+#include <communication/msg/battery_states.hpp>
 #include <crsf_parser.hpp>
 #include <cstdio>
 #include <functional>
@@ -14,6 +16,7 @@
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include "com_publisher.hpp"
 std::shared_ptr<COMPublisher> com_publisher;
+std::shared_ptr<CRSFParser> crsf_paser;
 using namespace std::chrono_literals;
 #define CRSR_MAX 1811
 #define CRSR_MIN 174
@@ -57,13 +60,33 @@ public:
             "motion_commands", 20);
         timer_ = this->create_wall_timer(
             10ms, std::bind(&CRSFRemote::timer_callback, this));
+
+        heartbeat_timer_ = this->create_wall_timer(
+            1s, std::bind(&CRSFRemote::heartbeat_timer_callback, this));
         vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
             "cmd_vel", 10,
             std::bind(&CRSFRemote::velcmd_callback, this,
                       std::placeholders::_1));
+        bat_sub_ = this->create_subscription<communication::msg::BatteryStates>(
+            "battery_states", 10,
+            std::bind(&CRSFRemote::bat_callback, this, std::placeholders::_1));
     }
 
 private:
+    communication::msg::BatteryStates lastest_bat_msg_;
+    void heartbeat_timer_callback()
+    {
+        if (crsf_paser == nullptr)
+            return;
+        crsf_paser->send_battery(lastest_bat_msg_.voltage * 10,
+                                 lastest_bat_msg_.current * 10,
+                                 (100 - lastest_bat_msg_.soc) * (10000),
+                                 lastest_bat_msg_.soc);
+    }
+    void bat_callback(communication::msg::BatteryStates::SharedPtr msg)
+    {
+        lastest_bat_msg_ = *msg;
+    }
     void timer_callback()
     {
         // 处理遥控器逻辑
@@ -196,6 +219,7 @@ private:
                 message.btn_9 = dance_flag ? 1 : 0;
 
                 message.height_des = CRSF_STAND_HEIGHT;
+                // 为了兼容手柄
                 com_publisher->motion_cmd_messages = message;
                 com_publisher->normal_mode = message.btn_1 == 1;
                 com_publisher->zero_torque_mode = message.btn_2 == 1;
@@ -211,6 +235,7 @@ private:
             // 遥控器断连则使用摇杆控制
             if (com_pub == nullptr)
                 return;
+            // 为了兼容手柄
             message = com_publisher->motion_cmd_messages;
             normal_mode = message.btn_1 == 1;
             zero_torque_mode = message.btn_2 == 1;
@@ -240,8 +265,10 @@ private:
         velr_filt = 0;
     }
     rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
     rclcpp::Publisher<communication::msg::MotionCommands>::SharedPtr com_pub;
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr vel_sub_;
+    rclcpp::Subscription<communication::msg::BatteryStates>::SharedPtr bat_sub_;
     communication::msg::MotionCommands motion_cmd_messages;
     bool is_crsf_connected = false;
     double velxy[2] = { 0 }; // x y速度       (x,y speed)
@@ -271,7 +298,8 @@ private:
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    CRSFParser crsf("/dev/ttyCRSF", 420000, crsf_callback);
+    crsf_paser =
+        std::make_shared<CRSFParser>("/dev/ttyCRSF", 420000, crsf_callback);
     com_publisher = std::make_shared<COMPublisher>("/dev/input/js0");
     std::shared_ptr<CRSFRemote> crsf_remote = std::make_shared<CRSFRemote>();
     rclcpp::executors::MultiThreadedExecutor multi_threaded_executor;

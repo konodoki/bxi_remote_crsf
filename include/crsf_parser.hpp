@@ -1,3 +1,5 @@
+#include <cstdint>
+#include <cstdio>
 #include <stdint.h>
 #include "CSerialPort/SerialPort.h"
 #include "CSerialPort/SerialPortInfo.h"
@@ -56,6 +58,48 @@ public:
                  itas109::DataBits8, itas109::StopOne, itas109::FlowNone, 4096);
         if (has_port)
             tryOpen();
+    }
+    /**
+     * 构建 CRSF 电池电传包
+     * @param voltage: 电压，单位 0.1V (例如 126 代表 12.6V)
+     * @param current: 电流，单位 0.1A (例如 50 代表 5.0A)
+     * @param fuel: 消耗容量，单位 mAh
+     * @param remaining: 剩余百分比 (0-100)
+     */
+    void send_battery(uint16_t voltage, uint16_t current, uint32_t fuel,
+                      uint8_t remaining)
+    {
+        if (!sp_.isOpen())
+            return;
+        uint8_t buffer_[256] = { 0 };
+        uint8_t len =
+            packBatterySensor(buffer_, voltage, current, fuel, remaining);
+        sp_.writeData(buffer_, len);
+    }
+    void send_heartbeat()
+    {
+        // 标准飞控心跳包 (Type 0x0B)
+        // 结构: [EE] [04] [0B] [Origin] [Target] [CRC]
+        // Origin 0xEE (FC), Target 0xEC (RX)
+        uint8_t heartbeat[] = { 0xEE, 0x04, 0x0B, 0xEE, 0xEC, 0x00 };
+        heartbeat[5] = crc8Bulk(&heartbeat[2], 3, 0);
+        sp_.writeData(heartbeat, 6);
+    }
+    void send_device_info()
+    {
+        uint8_t buf[40];
+        buf[0] = 0xEE; // 源地址
+        buf[1] = 0x1E; // 长度 (根据 Payload 调整)
+        buf[2] = 0x29; // Type: CRSF_FRAMETYPE_DEVICE_INFO
+
+        // Payload: 这里的字符串可以自定义
+        const char *name = "BXI_FC";
+        memcpy(&buf[3], name, 7); // Name
+        // 后面还有固件版本、序列号等，如果只是为了激活，可以填 0
+        memset(&buf[10], 0, 20);
+
+        buf[buf[1] + 1] = crc8Bulk(&buf[2], buf[1] - 1, 0);
+        sp_.writeData(buf, buf[1] + 2);
     }
 
 private:
@@ -255,7 +299,51 @@ private:
         }
         return port_path;
     }
+    /**
+     * 构建 CRSF 电池电传包
+     * @param buffer: 用于存储生成的包（建议至少 12 字节）
+     * @param voltage: 电压，单位 0.1V (例如 126 代表 12.6V)
+     * @param current: 电流，单位 0.1A (例如 50 代表 5.0A)
+     * @param fuel: 消耗容量，单位 mAh
+     * @param remaining: 剩余百分比 (0-100)
+     * @return: 写入 buffer 的总字节数
+     */
+    uint8_t packBatterySensor(uint8_t *buffer, uint16_t voltage,
+                              uint16_t current, uint32_t fuel,
+                              uint8_t remaining)
+    {
+        // 1. 设置头部
+        buffer[0] = 0xC8; // 目的地址: CRSF_ADDRESS_FLIGHT_CONTROLLER
+        buffer[1] = 0x0A; // 长度: Type(1) + Data(8) + CRC(1) = 10
 
+        // 2. 填充 Payload (从 buffer[2] 开始计算 CRC)
+        buffer[2] =
+            CRSF::FRAMETYPE_BATTERY_SENSOR; // Payload Type:
+                                            // CRSF_FRAMETYPE_BATTERY_SENSOR
+
+        // 电压 (大端序)
+        buffer[3] = (uint8_t)(voltage >> 8);
+        buffer[4] = (uint8_t)(voltage & 0xFF);
+
+        // 电流 (大端序)
+        buffer[5] = (uint8_t)(current >> 8);
+        buffer[6] = (uint8_t)(current & 0xFF);
+
+        // 容量 (3字节, 大端序)
+        buffer[7] = (uint8_t)((fuel >> 16) & 0xFF);
+        buffer[8] = (uint8_t)((fuel >> 8) & 0xFF);
+        buffer[9] = (uint8_t)(fuel & 0xFF);
+
+        // 剩余电量
+        buffer[10] = remaining;
+
+        // 3. 计算 CRC
+        // 根据 CRSF 标准，校验和计算范围是 [Type] 到 [Data_Last]
+        // 初始值通常为 0
+        buffer[11] = crc8Bulk(&buffer[2], 9, 0);
+
+        return 12; // 总长度: Addr(1) + Len(1) + Type(1) + Data(8) + CRC(1)
+    }
     // ----------------------------------------------------------
     // CRC-8/DVB-S2 (poly 0xD5)
     // ----------------------------------------------------------
