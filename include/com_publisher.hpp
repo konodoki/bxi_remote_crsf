@@ -1,6 +1,7 @@
 
 #include <communication/msg/motion_commands.hpp>
 #include <linux/joystick.h>
+#include <rclcpp/utilities.hpp>
 #include <unistd.h>
 #include <fcntl.h>
 #include <rclcpp/rclcpp.hpp>
@@ -388,7 +389,7 @@ private:
             if (len <= 0) {
                 printf("js dev lost, retry\n");
                 close(js_fd);
-                while (1) {
+                while (rclcpp::ok()) {
                     js_fd = open(_js_dev_name, O_RDONLY); // O_NONBLOCK
                     if (js_fd < 0) {
                         printf("open:%s failed\n", _js_dev_name);
