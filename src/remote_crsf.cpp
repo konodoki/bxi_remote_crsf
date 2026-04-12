@@ -19,9 +19,9 @@ void crsf_callback(uint16_t channels_[])
     const std::lock_guard<std::mutex> guard(channel_lock);
     for (int i = 0; i < 16; i++) {
         channels[i] = (channels_[i] - CRSR_MID) / CRSR_SCALE;
-        // printf("%.2f ", channels[i]);
+        printf("%.2f ", channels[i]);
     }
-    // printf("\n");
+    printf("\n");
 }
 void print_channel()
 {
@@ -31,7 +31,7 @@ void print_channel()
     printf("\n");
 }
 #define VELX_CHANNEL (1)
-#define VELY_CHANNEL (9)
+#define VELY_CHANNEL (0)
 #define VELR_CHANNEL (3)
 #define SYSCTRL_CHANNEL (7)
 #define MODE_CHANNEL (5)
@@ -203,7 +203,7 @@ private:
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    CRSFParser crsf("/dev/ttyCRSF", 420000, crsf_callback);
+    CRSFParser crsf("/dev/ttyACM0", 420000, crsf_callback);
     rclcpp::spin(std::make_shared<CRSFRemote>());
     rclcpp::shutdown();
     return 0;
