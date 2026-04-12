@@ -216,7 +216,7 @@ private:
     void onHotPlugEvent(const char *portName, int isAdd) override
     {
         printf("热插拔: %s %s\n", portName, isAdd ? "插入" : "拔出");
-        if (port_ != portName)
+        if (port_ != portName && port_ != port_raw_)
             return;
         if (isAdd) {
             port_ = get_real_serial_port(port_raw_);
