@@ -44,6 +44,7 @@ void print_channel()
 #define MIN_SPEED_R -1.0
 #define MAX_SPEED_R 1.0
 #define STAND_HEIGHT 1.0
+#define AXIS_DEAD_ZONE 0.05
 class CRSFRemote : public rclcpp::Node {
 public:
     CRSFRemote()
@@ -88,7 +89,7 @@ private:
         }
         // pd模式
         static float pd_channel_last = channels[PD_CHANNEL];
-        if (pd_channel_last < 0 && channels[PD_CHANNEL] > 0) {
+        if (pd_channel_last < -0.5 && channels[PD_CHANNEL] > 0.5) {
             pd_brake_mode = !pd_brake_mode;
             RCLCPP_INFO(this->get_logger(), "切换为PD");
         }
@@ -117,6 +118,9 @@ private:
             velxy[0] = channels[VELX_CHANNEL];
             velxy[1] = channels[VELY_CHANNEL];
             velr = channels[VELR_CHANNEL];
+            velxy[0] = fabs(velxy[0]) > AXIS_DEAD_ZONE ? velxy[0] : 0;
+            velxy[1] = fabs(velxy[1]) > AXIS_DEAD_ZONE ? velxy[1] : 0;
+            velr = fabs(velr) > AXIS_DEAD_ZONE ? velr : 0;
 
             // 按定义最大速度缩放
             if (velxy[0] > 0) {
