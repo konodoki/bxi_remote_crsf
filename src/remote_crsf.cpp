@@ -1,12 +1,15 @@
 #include <communication/msg/motion_commands.hpp>
 #include <crsf_parser.hpp>
 #include <cstdio>
+#include <functional>
+#include <geometry_msgs/msg/detail/twist_stamped__struct.hpp>
 #include <memory>
 #include <mutex>
 #include <rclcpp/executors.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/node.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 using namespace std::chrono_literals;
 #define CRSR_MAX 1811
 #define CRSR_MIN 174
@@ -33,6 +36,7 @@ void print_channel()
 #define VELX_CHANNEL (1)
 #define VELY_CHANNEL (0)
 #define VELR_CHANNEL (3)
+#define NAVCTL_CHANNEL (4)
 #define SYSCTRL_CHANNEL (7)
 #define MODE_CHANNEL (5)
 #define PD_CHANNEL (8)
@@ -54,6 +58,10 @@ public:
             "motion_commands", 20);
         timer_ = this->create_wall_timer(
             10ms, std::bind(&CRSFRemote::timer_callback, this));
+        vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+            "cmd_vel", 10,
+            std::bind(&CRSFRemote::velcmd_callback, this,
+                      std::placeholders::_1));
     }
 
 private:
@@ -117,42 +125,44 @@ private:
         auto message = communication::msg::MotionCommands();
         { // initialize a ROS2 message
             const std::lock_guard<std::mutex> guard(channel_lock);
-            velxy[0] = channels[VELX_CHANNEL];
-            velxy[1] = -channels[VELY_CHANNEL];
-            velr = -channels[VELR_CHANNEL];
-            velxy[0] = fabs(velxy[0]) > AXIS_DEAD_ZONE ? velxy[0] : 0;
-            velxy[1] = fabs(velxy[1]) > AXIS_DEAD_ZONE ? velxy[1] : 0;
-            velr = fabs(velr) > AXIS_DEAD_ZONE ? velr : 0;
+            if (channels[NAVCTL_CHANNEL] < -0.5) {
+                velxy[0] = channels[VELX_CHANNEL];
+                velxy[1] = -channels[VELY_CHANNEL];
+                velr = -channels[VELR_CHANNEL];
+                velxy[0] = fabs(velxy[0]) > AXIS_DEAD_ZONE ? velxy[0] : 0;
+                velxy[1] = fabs(velxy[1]) > AXIS_DEAD_ZONE ? velxy[1] : 0;
+                velr = fabs(velr) > AXIS_DEAD_ZONE ? velr : 0;
 
-            // 按定义最大速度缩放
-            if (velxy[0] > 0) {
-                velxy[0] *= MAX_SPEED_X;
-            } else if (velxy[0] < 0) {
-                velxy[0] *= -MIN_SPEED_X;
+                // 按定义最大速度缩放
+                if (velxy[0] > 0) {
+                    velxy[0] *= MAX_SPEED_X;
+                } else if (velxy[0] < 0) {
+                    velxy[0] *= -MIN_SPEED_X;
+                }
+
+                if (velxy[1] > 0) {
+                    velxy[1] *= MAX_SPEED_Y;
+                } else if (velxy[1] < 0) {
+                    velxy[1] *= -MIN_SPEED_Y;
+                }
+
+                if (velr > 0) {
+                    velr *= MAX_SPEED_R;
+                } else if (velr < 0) {
+                    velr *= -MIN_SPEED_R;
+                }
+                velxy_filt[0] = velxy[0] * 0.03 + velxy_filt[0] * 0.97;
+                velxy_filt[1] = velxy[1] * 0.03 + velxy_filt[1] * 0.97;
+                velr_filt = velr * 0.05 + velr_filt * 0.95;
+                message.vel_des.x = velxy_filt[0];
+                message.vel_des.y = velxy_filt[1];
+                message.yawdot_des = velr_filt;
+            } else if (channels[NAVCTL_CHANNEL] > 0.5) {
+                // 导航模式没有滤波
+                message.vel_des.x = velxy[0];
+                message.vel_des.y = velxy[1];
+                message.yawdot_des = velr_filt;
             }
-
-            if (velxy[1] > 0) {
-                velxy[1] *= MAX_SPEED_Y;
-            } else if (velxy[1] < 0) {
-                velxy[1] *= -MIN_SPEED_Y;
-            }
-
-            if (velr > 0) {
-                velr *= MAX_SPEED_R;
-            } else if (velr < 0) {
-                velr *= -MIN_SPEED_R;
-            }
-
-            velxy_filt[0] = velxy[0] * 0.03 + velxy_filt[0] * 0.97;
-            velxy_filt[1] = velxy[1] * 0.03 + velxy_filt[1] * 0.97;
-
-            velr_filt = velr * 0.05 + velr_filt * 0.95;
-
-            message.vel_des.x = velxy_filt[0];
-            message.vel_des.y = velxy_filt[1];
-            message.yawdot_des = velr_filt;
-            // message.mode = mode;
-
             // RB组合键
             message.btn_1 = normal_mode ? 1 : 0;
             message.btn_2 = zero_torque_mode ? 1 : 0;
@@ -173,6 +183,14 @@ private:
 
         com_pub->publish(message);
     }
+    void velcmd_callback(geometry_msgs::msg::TwistStamped::SharedPtr msg)
+    {
+        if (channels[NAVCTL_CHANNEL] > 0.5) {
+            velxy[0] = msg->twist.linear.x;
+            velxy[1] = msg->twist.linear.y;
+            velr = msg->twist.angular.z;
+        }
+    }
     void reset_value()
     {
         const std::lock_guard<std::mutex> guard(channel_lock);
@@ -182,6 +200,7 @@ private:
     }
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<communication::msg::MotionCommands>::SharedPtr com_pub;
+    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr vel_sub_;
     double velxy[2] = { 0 }; // x y速度       (x,y speed)
     double velxy_filt[2] = { 0 }; // x y速度滤波值  (x,y speed filter)
     double velr = 0; // 旋转速度       (rotation speed)

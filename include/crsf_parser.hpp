@@ -31,11 +31,11 @@ public:
     CRSFParser(std::string port, int baudrate,
                std::function<void(uint16_t[])> cb)
         : channel_cb_(cb)
-        , port_(port)
+        , port_raw_(port)
         , baudrate_(baudrate)
     {
         buildCRCTable();
-        port_ = get_real_serial_port(port_);
+        port_ = get_real_serial_port(port_raw_);
 
         auto ports = CSerialPortInfo::availablePortInfos();
         printf("AvailableFriendlyPorts:\n");
@@ -218,9 +218,10 @@ private:
         printf("热插拔: %s %s\n", portName, isAdd ? "插入" : "拔出");
         if (port_ != portName)
             return;
-        if (isAdd)
+        if (isAdd) {
+            port_ = get_real_serial_port(port_raw_);
             tryOpen();
-        else {
+        } else {
             sp_.close();
             buffer_.clear(); // 断开时清空缓冲区，防止脏数据残留
             printf("串口已关闭: %s\n", port_.c_str());
@@ -288,7 +289,7 @@ private:
     uint8_t link_quality_ = 100;
     uint8_t rssi_dbm_ = 0;
     bool failsafe_ = false;
-
+    std::string port_raw_;
     std::string port_;
     int baudrate_;
     bool debug_ = false;
