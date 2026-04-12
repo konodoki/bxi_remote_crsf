@@ -251,10 +251,11 @@ private:
                     if (event.value) {
                         switch (event.number) {
                         case JS_STOP_BT: {
-                            ret = system("killall -SIGINT hardware_elf3");
-                            ret = system("killall -SIGINT bxi_example_py_elf3");
-                            ret = system(
-                                "killall -SIGINT bxi_example_py_elf3_demo");
+                            system("killall -SIGINT hardware_elf3");
+                            system("killall -SIGINT bxi_example_py_elf3");
+                            system("killall -SIGINT bxi_example_py_elf3_demo");
+                            system("killall -SIGINT bxi_bms");
+                            system("killall -SIGINT bxi_example_bms");
 
                             launch_lock = false;
 
