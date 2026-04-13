@@ -1,8 +1,14 @@
+#include <algorithm>
+#include <communication/msg/detail/actuator_states__struct.hpp>
 #include <communication/msg/motion_commands.hpp>
 #include <communication/msg/battery_states.hpp>
+#include <communication/msg/actuator_states.hpp>
+#include <cstdio>
 #include <linux/joystick.h>
+#include <random>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/utilities.hpp>
+#include <sstream>
 #include <unistd.h>
 #include <fcntl.h>
 #include <chrono>
@@ -103,6 +109,9 @@ public:
         heartbeat_timer_ = this->create_wall_timer(
             1s, std::bind(&RemoteControlNode::heartbeat_timer_callback, this));
 
+        motor_tmp_timer_ = this->create_wall_timer(
+            1s, std::bind(&RemoteControlNode::motor_timer_callback, this));
+
         // 初始化订阅者
         vel_sub_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
             "cmd_vel", 10,
@@ -112,7 +121,11 @@ public:
             "battery_states", 10,
             std::bind(&RemoteControlNode::bat_callback, this,
                       std::placeholders::_1));
-
+        motor_sub_ =
+            this->create_subscription<communication::msg::ActuatorStates>(
+                "hardware/actuator_states", 10,
+                std::bind(&RemoteControlNode::motor_callback, this,
+                          std::placeholders::_1));
         // 初始化CRSF
         crsf_parser_ = std::make_shared<CRSFParser>(
             crsf_path, 420000,
@@ -147,8 +160,11 @@ private:
         motion_cmd_pub_;
     rclcpp::TimerBase::SharedPtr control_timer_;
     rclcpp::TimerBase::SharedPtr heartbeat_timer_;
+    rclcpp::TimerBase::SharedPtr motor_tmp_timer_;
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr vel_sub_;
     rclcpp::Subscription<communication::msg::BatteryStates>::SharedPtr bat_sub_;
+    rclcpp::Subscription<communication::msg::ActuatorStates>::SharedPtr
+        motor_sub_;
 
     // CRSF相关
     std::shared_ptr<CRSFParser> crsf_parser_;
@@ -156,6 +172,7 @@ private:
     std::chrono::high_resolution_clock::time_point crsf_last_rec_time_;
     bool is_crsf_connected_ = false;
     communication::msg::BatteryStates lastest_bat_msg_;
+    communication::msg::ActuatorStates lastest_motor_msg_;
 
     // 手柄相关
     std::string js_path_;
@@ -500,7 +517,7 @@ private:
         }
 
         // 停止程序
-        if (crsf_channels_[CRSF_SYSCTRL_CHANNEL] < -0.5f) {
+        if (crsf_channels_[CRSF_SYSCTRL_CHANNEL] < -0.5f && launch_lock_) {
             stop_robot_program();
             launch_lock_ = false;
             RCLCPP_INFO(this->get_logger(), "CRSF: Stop robot program");
@@ -566,6 +583,31 @@ private:
                                        lastest_bat_msg_.current * 10,
                                        (100 - lastest_bat_msg_.soc) * 10000,
                                        lastest_bat_msg_.soc);
+
+            // crsf_parser_->send_battery(48.5 * 10, 3.2 * 10, (100 - 44) *
+            // 10000,
+            //                            44);
+        }
+    }
+    void motor_timer_callback()
+    {
+        static int motor_indx = 0;
+        if (crsf_parser_ && is_crsf_connected_) {
+            char textBuf[16];
+            snprintf(textBuf, sizeof(textBuf), "%c%c", ((char)motor_indx) + 1,
+                     (char)(lastest_motor_msg_.motor_temperature[motor_indx]));
+
+            // std::random_device rd;
+            // std::mt19937 gen(rd());
+            // std::uniform_real_distribution<double> dist(28.0, 200.0);
+            // memset(textBuf, 0, 16);
+            // snprintf(textBuf, sizeof(textBuf), "%c%c", ((char)motor_indx) +
+            // 1,
+            //          (char)(dist(gen)));
+            crsf_parser_->send_text(textBuf);
+            motor_indx++;
+            if (motor_indx >= 31)
+                motor_indx = 0;
         }
     }
 
@@ -584,6 +626,11 @@ private:
     void bat_callback(communication::msg::BatteryStates::SharedPtr msg)
     {
         lastest_bat_msg_ = *msg;
+    }
+    // =========== 电机温度订阅回调 ===========
+    void motor_callback(communication::msg::ActuatorStates::SharedPtr msg)
+    {
+        lastest_motor_msg_ = *msg;
     }
 };
 

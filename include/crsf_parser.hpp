@@ -76,30 +76,33 @@ public:
             packBatterySensor(buffer_, voltage, current, fuel, remaining);
         sp_.writeData(buffer_, len);
     }
-    void send_heartbeat()
+    /**
+     * @param latitude: 纬度，单位 1e-7 (例如 30.1234567 -> 301234567)
+     * @param longitude: 经度，单位 1e-7 (例如 120.1234567 -> 1201234567)
+     * @param groundSpeed: 地速，单位 0.1km/h (例如 50 代表 5.0km/h)
+     * @param heading: 航向，单位 0.01度 (例如 35000 代表 350.00度)
+     * @param altitude: 海拔，单位 米 (需加上1000m偏移，例如填 1200 代表实际海拔
+     * 200m)
+     * @param satellites: 卫星数量 (0-255)
+     */
+    void send_gps(int32_t latitude, int32_t longitude, uint16_t groundSpeed,
+                  uint16_t heading, uint16_t altitude, uint8_t satellites)
     {
-        // 标准飞控心跳包 (Type 0x0B)
-        // 结构: [EE] [04] [0B] [Origin] [Target] [CRC]
-        // Origin 0xEE (FC), Target 0xEC (RX)
-        uint8_t heartbeat[] = { 0xEE, 0x04, 0x0B, 0xEE, 0xEC, 0x00 };
-        heartbeat[5] = crc8Bulk(&heartbeat[2], 3, 0);
-        sp_.writeData(heartbeat, 6);
+        if (!sp_.isOpen())
+            return;
+        uint8_t buffer_[256] = { 0 };
+        uint8_t len = packGPSSensor(buffer_, latitude, longitude, groundSpeed,
+                                    heading, altitude, satellites);
+        sp_.writeData(buffer_, len);
     }
-    void send_device_info()
+    void send_text(std::string text)
     {
-        uint8_t buf[40];
-        buf[0] = 0xEE; // 源地址
-        buf[1] = 0x1E; // 长度 (根据 Payload 调整)
-        buf[2] = 0x29; // Type: CRSF_FRAMETYPE_DEVICE_INFO
-
-        // Payload: 这里的字符串可以自定义
-        const char *name = "BXI_FC";
-        memcpy(&buf[3], name, 7); // Name
-        // 后面还有固件版本、序列号等，如果只是为了激活，可以填 0
-        memset(&buf[10], 0, 20);
-
-        buf[buf[1] + 1] = crc8Bulk(&buf[2], buf[1] - 1, 0);
-        sp_.writeData(buf, buf[1] + 2);
+        if (!sp_.isOpen())
+            return;
+        uint8_t buffer_[256] = { 0 };
+        uint8_t len = packTextSensor(buffer_, (uint8_t *)text.c_str(),
+                                     strlen(text.c_str()));
+        sp_.writeData(buffer_, len);
     }
 
 private:
@@ -343,6 +346,93 @@ private:
         buffer[11] = crc8Bulk(&buffer[2], 9, 0);
 
         return 12; // 总长度: Addr(1) + Len(1) + Type(1) + Data(8) + CRC(1)
+    }
+    /**
+     * 构建 CRSF GPS 电传包
+     * @param buffer: 用于存储生成的包（建议至少 18 字节）
+     * @param latitude: 纬度，单位 1e-7 (例如 30.1234567 -> 301234567)
+     * @param longitude: 经度，单位 1e-7 (例如 120.1234567 -> 1201234567)
+     * @param groundSpeed: 地速，单位 0.1km/h (例如 50 代表 5.0km/h)
+     * @param heading: 航向，单位 0.01度 (例如 35000 代表 350.00度)
+     * @param altitude: 海拔，单位 米 (需加上1000m偏移，例如填 1200 代表实际海拔
+     * 200m)
+     * @param satellites: 卫星数量 (0-255)
+     * @return: 写入 buffer 的总字节数
+     */
+    uint8_t packGPSSensor(uint8_t *buffer, int32_t latitude, int32_t longitude,
+                          uint16_t groundSpeed, uint16_t heading,
+                          uint16_t altitude, uint8_t satellites)
+    {
+        // 1. 设置头部
+        buffer[0] = 0xC8; // 目的地址 (C8 兼容性最好)
+        buffer[1] = 0x11; // 长度: Type(1) + Data(15) + CRC(1) = 17 (0x11)
+
+        // 2. 填充 Payload (从 buffer[2] 开始计算 CRC)
+        buffer[2] = CRSF::FRAMETYPE_GPS; // 0x02
+
+        // 纬度 Latitude (4字节, Big-Endian)
+        buffer[3] = (uint8_t)(latitude >> 24);
+        buffer[4] = (uint8_t)(latitude >> 16);
+        buffer[5] = (uint8_t)(latitude >> 8);
+        buffer[6] = (uint8_t)(latitude & 0xFF);
+
+        // 经度 Longitude (4字节, Big-Endian)
+        buffer[7] = (uint8_t)(longitude >> 24);
+        buffer[8] = (uint8_t)(longitude >> 16);
+        buffer[9] = (uint8_t)(longitude >> 8);
+        buffer[10] = (uint8_t)(longitude & 0xFF);
+
+        // 地速 Ground Speed (2字节, Big-Endian)
+        buffer[11] = (uint8_t)(groundSpeed >> 8);
+        buffer[12] = (uint8_t)(groundSpeed & 0xFF);
+
+        // 航向 Heading (2字节, Big-Endian)
+        buffer[13] = (uint8_t)(heading >> 8);
+        buffer[14] = (uint8_t)(heading & 0xFF);
+
+        // 海拔 Altitude (2字节, Big-Endian)
+        // 注意：CRSF 协议规定海拔需要加上 1000m 的偏移量
+        buffer[15] = (uint8_t)(altitude >> 8);
+        buffer[16] = (uint8_t)(altitude & 0xFF);
+
+        // 卫星数 Satellites (1字节)
+        buffer[17] = satellites;
+
+        // 3. 计算 CRC
+        // 校验范围: buffer[2] 到 buffer[17]，共 16 字节 (Type + 15字节数据)
+        buffer[18] = crc8Bulk(&buffer[2], 16, 0);
+
+        return 19; // 总长度: Addr(1) + Len(1) + Type(1) + Data(15) + CRC(1) =
+                   // 19
+    }
+    /**
+     * 构建 CRSF 文本电传包 (Type 0x21)
+     * @param buffer: 用于存储生成的包
+     * @param motorIdx: 电机编号 (1-31)
+     * @param temp: 温度值
+     * @return: 写入 buffer 的总字节数
+     */
+    uint8_t packTextSensor(uint8_t *buffer, uint8_t *textBuf, uint8_t strLen)
+    {
+        // 1. 设置头部
+        buffer[0] = 0xC8;
+        // 长度 = Type(1) + String(strLen) + NullTerminator(1) + CRC(1)
+        buffer[1] = strLen + 3;
+
+        // 2. 填充 Payload
+        buffer[2] = 0x21; // Type: CRSF_FRAMETYPE_TEXT_SELECTION / General Text
+
+        // 拷贝字符串到 buffer
+        memcpy(&buffer[3], textBuf, strLen);
+
+        // 字符串结束符
+        buffer[3 + strLen] = 0x00;
+
+        // 3. 计算 CRC
+        // 校验范围从 buffer[2] (Type) 到结束符为止
+        buffer[3 + strLen + 1] = crc8Bulk(&buffer[2], strLen + 2, 0);
+
+        return strLen + 5; // 总长度: Addr + Len + Type + String + Null + CRC
     }
     // ----------------------------------------------------------
     // CRC-8/DVB-S2 (poly 0xD5)
