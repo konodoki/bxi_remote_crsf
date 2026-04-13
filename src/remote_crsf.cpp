@@ -36,7 +36,6 @@ using namespace std;
 #define STAND_HEIGHT_MAX 3.0
 
 // ===================== 手柄(JS)宏定义 =====================
-#define JS_PATH "/dev/input/js0"
 #if 0 // PS4 JS
 #define JS_VELX_AXIS 4
 #define JS_VELX_AXIS_DIR -1
@@ -73,7 +72,6 @@ using namespace std;
 #endif
 
 // ===================== CRSF宏定义 =====================
-#define CRSF_PATH "/dev/ttyCRSF"
 #define CRSR_MAX 1811
 #define CRSR_MIN 174
 static constexpr float CRSR_MID = (CRSR_MAX + CRSR_MIN) * 0.5f;
@@ -90,8 +88,9 @@ static constexpr float CRSR_SCALE = (CRSR_MAX - CRSR_MIN) * 0.5f;
 // ===================== 统一节点类 =====================
 class RemoteControlNode : public rclcpp::Node {
 public:
-    RemoteControlNode()
+    RemoteControlNode(std::string crsf_path, std::string js_path)
         : Node("remote_control_node")
+        , js_path_(js_path)
     {
         // 初始化发布者
         motion_cmd_pub_ =
@@ -116,13 +115,13 @@ public:
 
         // 初始化CRSF
         crsf_parser_ = std::make_shared<CRSFParser>(
-            CRSF_PATH, 420000,
+            crsf_path, 420000,
             std::bind(&RemoteControlNode::crsf_callback, this,
                       std::placeholders::_1));
         crsf_last_rec_time_ = std::chrono::high_resolution_clock::now();
 
         // 初始化手柄
-        js_fd_ = open(JS_PATH, O_RDONLY);
+        js_fd_ = open(js_path_.c_str(), O_RDONLY);
         if (js_fd_ < 0) {
             RCLCPP_WARN(this->get_logger(),
                         "Failed to open joystick, will retry...");
@@ -143,7 +142,6 @@ public:
     }
 
 private:
-    // ========== 核心成员变量 ==========
     // 发布/订阅/定时器
     rclcpp::Publisher<communication::msg::MotionCommands>::SharedPtr
         motion_cmd_pub_;
@@ -160,6 +158,7 @@ private:
     communication::msg::BatteryStates lastest_bat_msg_;
 
     // 手柄相关
+    std::string js_path_;
     int js_fd_ = -1;
     std::thread js_loop_thread_;
     double js_axis_[20] = { 0 };
@@ -217,7 +216,7 @@ private:
                             "Joystick disconnected, retrying...");
                 close(js_fd_);
                 while (rclcpp::ok() && js_fd_ < 0) {
-                    js_fd_ = open(JS_PATH, O_RDONLY);
+                    js_fd_ = open(js_path_.c_str(), O_RDONLY);
                     if (js_fd_ < 0)
                         sleep(1);
                 }
@@ -501,7 +500,7 @@ private:
         }
 
         // 停止程序
-        if (crsf_channels_[CRSF_SYSCTRL_CHANNEL] < -0.5f && launch_lock_) {
+        if (crsf_channels_[CRSF_SYSCTRL_CHANNEL] < -0.5f) {
             stop_robot_program();
             launch_lock_ = false;
             RCLCPP_INFO(this->get_logger(), "CRSF: Stop robot program");
@@ -592,7 +591,8 @@ private:
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<RemoteControlNode>();
+    auto node =
+        std::make_shared<RemoteControlNode>("/dev/ttyCRSF", "/dev/input/js0");
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
