@@ -431,8 +431,8 @@ private:
             // 速度缩放
             scale_speed();
             // 滤波
-            velxy_filt_[0] = velxy_[0] * 0.03 + velxy_filt_[0] * 0.97;
-            velxy_filt_[1] = velxy_[1] * 0.03 + velxy_filt_[1] * 0.97;
+            velxy_filt_[0] = velxy_[0] * 0.97 + velxy_filt_[0] * 0.03;
+            velxy_filt_[1] = velxy_[1] * 0.97 + velxy_filt_[1] * 0.03;
             velr_filt_ = velr_ * 0.05 + velr_filt_ * 0.95;
 
             msg.vel_des.x = velxy_filt_[0];

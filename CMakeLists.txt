@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.8)
 project(remote_crsf)
+set(EXECUTER_NAME remote_controller)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,17 +17,17 @@ find_package(communication REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 add_subdirectory(thirdpart/CSerialPort)
-add_executable(remote_crsf src/remote_crsf.cpp)
-target_link_libraries(remote_crsf libcserialport)
-target_include_directories(remote_crsf PUBLIC
+add_executable(${EXECUTER_NAME} src/remote_crsf.cpp)
+target_link_libraries(${EXECUTER_NAME} libcserialport)
+target_include_directories(${EXECUTER_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   thirdpart/CSerialPort/include
 )
-target_compile_features(remote_crsf PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-ament_target_dependencies(remote_crsf rclcpp std_msgs communication)
-install(TARGETS remote_crsf
-  DESTINATION lib/${PROJECT_NAME})
+target_compile_features(${EXECUTER_NAME} PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+ament_target_dependencies(${EXECUTER_NAME} rclcpp std_msgs communication)
+install(TARGETS ${EXECUTER_NAME}
+  DESTINATION lib/${EXECUTER_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
