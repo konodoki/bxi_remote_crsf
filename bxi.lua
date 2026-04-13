@@ -1,11 +1,12 @@
 local mid = LCD_W / 2
 -- 变量定义
-local my_vbatId, my_currId, my_batid, my_fmid
+local my_vbatId, my_currId, my_batid, my_capaid, my_fmid
 local motorTemps = {} -- 建立温度表
 local function init_func()
 	-- 获取传感器 ID
 	my_vbatId = getFieldInfo("RxBt") and getFieldInfo("RxBt").id or nil
 	my_currId = getFieldInfo("Curr") and getFieldInfo("Curr").id or nil
+	my_capaid = getFieldInfo("Capa") and getFieldInfo("Capa").id or nil
 	my_batid = getFieldInfo("Bat%") and getFieldInfo("Bat%").id or nil
 	my_fmid = getFieldInfo("FM") and getFieldInfo("FM").id or nil
 end
@@ -25,9 +26,13 @@ local function draw_summary()
 	local vbat = getValue(my_vbatId)
 	local curr = getValue(my_currId)
 	local bat = getValue(my_batid)
+	local capa = getValue(my_capaid)
 	lcd.drawText(5, 0, vbat .. "V", 0)
-	lcd.drawText(53, 0, curr .. "A", 0)
-	lcd.drawText(101, 0, bat .. "%", 0)
+	lcd.drawText(33, 0, curr .. "A", 0)
+	lcd.drawText(81, 0, bat .. "%", 0)
+	if curr ~= 0 then
+		lcd.drawText(136, 0, capa / curr * 60 .. "min", 0)
+	end
 	--最大5个电机
 	local sortedList = {}
 	local count = 0
