@@ -1,6 +1,6 @@
 local mid = LCD_W / 2
 local temp_warn = 80
-local temp_limit = 140
+local temp_limit = 120
 local speed_range_channel = "ch10"
 local bat_capa = 10 --电池容量Ah
 -- 变量定义
