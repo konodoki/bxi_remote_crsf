@@ -27,7 +27,7 @@ target_include_directories(${EXECUTER_NAME} PUBLIC
 target_compile_features(${EXECUTER_NAME} PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 ament_target_dependencies(${EXECUTER_NAME} rclcpp std_msgs communication)
 install(TARGETS ${EXECUTER_NAME}
-  DESTINATION lib/${EXECUTER_NAME})
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

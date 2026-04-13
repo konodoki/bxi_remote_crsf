@@ -119,18 +119,18 @@ public:
             "cmd_vel", 10,
             std::bind(&RemoteControlNode::velcmd_callback, this,
                       std::placeholders::_1));
-        real_vel_sub_ =
-            this->create_subscription<geometry_msgs::msg::TwistStamped>(
-                "hardware/real_speed", 10,
-                std::bind(&RemoteControlNode::realspeed_callback, this,
-                          std::placeholders::_1));
-
         bat_sub_ = this->create_subscription<communication::msg::BatteryStates>(
             "battery_states", 10,
             std::bind(&RemoteControlNode::bat_callback, this,
                       std::placeholders::_1));
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
         qos.best_effort();
+        real_vel_sub_ =
+            this->create_subscription<geometry_msgs::msg::TwistStamped>(
+                "hardware/real_speed", qos,
+                std::bind(&RemoteControlNode::realspeed_callback, this,
+                          std::placeholders::_1));
+
         motor_sub_ =
             this->create_subscription<communication::msg::ActuatorStates>(
                 "hardware/actuator_states", qos,
