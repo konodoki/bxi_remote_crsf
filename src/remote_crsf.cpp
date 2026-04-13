@@ -1,10 +1,9 @@
-#include <cmath>
 #include <fcntl.h>
-#include <geometry_msgs/msg/detail/twist_stamped__struct.hpp>
 #include <linux/joystick.h>
 #include <unistd.h>
 
 #include <chrono>
+#include <cmath>
 #include <communication/msg/actuator_states.hpp>
 #include <communication/msg/battery_states.hpp>
 #include <communication/msg/detail/actuator_states__struct.hpp>
@@ -13,6 +12,7 @@
 #include <csignal>
 #include <cstdio>
 #include <cstring>
+#include <geometry_msgs/msg/detail/twist_stamped__struct.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <mutex>
 #include <random>
@@ -84,9 +84,9 @@ using namespace std;
 static constexpr float CRSR_MID = (CRSR_MAX + CRSR_MIN) * 0.5f;
 static constexpr float CRSR_SCALE = (CRSR_MAX - CRSR_MIN) * 0.5f;
 
-#define CRSF_VELX_CHANNEL (1)
-#define CRSF_VELY_CHANNEL (0)
-#define CRSF_VELR_CHANNEL (3)
+#define CRSF_VELX_CHANNEL (2)
+#define CRSF_VELY_CHANNEL (3)
+#define CRSF_VELR_CHANNEL (0)
 #define CRSF_SPEED_RANGE_CHANNEL (9)
 #define CRSF_NAVCTL_CHANNEL (4)
 #define CRSF_SYSCTRL_CHANNEL (7)
