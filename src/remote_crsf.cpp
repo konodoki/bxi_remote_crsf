@@ -85,6 +85,7 @@ static constexpr float CRSR_SCALE = (CRSR_MAX - CRSR_MIN) * 0.5f;
 #define CRSF_VELX_CHANNEL (1)
 #define CRSF_VELY_CHANNEL (0)
 #define CRSF_VELR_CHANNEL (3)
+#define CRSF_SPEED_RANGE_CHANNEL (9)
 #define CRSF_NAVCTL_CHANNEL (4)
 #define CRSF_SYSCTRL_CHANNEL (7)
 #define CRSF_MODE_CHANNEL (5)
@@ -429,7 +430,6 @@ private:
 
             // 速度缩放
             scale_speed();
-
             // 滤波
             velxy_filt_[0] = velxy_[0] * 0.03 + velxy_filt_[0] * 0.97;
             velxy_filt_[1] = velxy_[1] * 0.03 + velxy_filt_[1] * 0.97;
@@ -528,13 +528,15 @@ private:
     // ========== 速度缩放 ==========
     void scale_speed()
     {
+        double speed_range =
+            crsf_channels_[CRSF_SPEED_RANGE_CHANNEL] + 1; // 0~2
         if (velxy_[0] > 0)
-            velxy_[0] *= MAX_SPEED_X;
+            velxy_[0] *= MAX_SPEED_X * speed_range;
         else if (velxy_[0] < 0)
             velxy_[0] *= -MIN_SPEED_X;
 
         if (velxy_[1] > 0)
-            velxy_[1] *= MAX_SPEED_Y;
+            velxy_[1] *= MAX_SPEED_Y * speed_range;
         else if (velxy_[1] < 0)
             velxy_[1] *= -MIN_SPEED_Y;
 

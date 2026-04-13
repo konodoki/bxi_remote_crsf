@@ -1,4 +1,6 @@
 local mid = LCD_W / 2
+local temp_warn = 80
+local speed_range_channel = "ch10"
 -- 变量定义
 local my_vbatId, my_currId, my_batid, my_capaid, my_fmid
 local motorTemps = {} -- 建立温度表
@@ -28,11 +30,13 @@ local function draw_summary()
 	local bat = getValue(my_batid)
 	local capa = getValue(my_capaid)
 	lcd.drawText(5, 0, vbat .. "V", 0)
-	lcd.drawText(30, 0, curr .. "A", 0)
-	lcd.drawText(51, 0, bat .. "%", 0)
+	lcd.drawText(36, 0, curr .. "A", 0)
+	lcd.drawText(63, 0, bat .. "%", 0)
 	if curr ~= 0 then
 		lcd.drawText(90, 0, math.ceil(capa / curr * 60) .. "min", 0)
 	end
+	local display_speed = string.format("%03.0f", (getValue(speed_range_channel) + 1000) / 10)
+	lcd.drawText(5, 54, "Max:" .. display_speed .. "%", 0)
 	--最大5个电机
 	local sortedList = {}
 	local count = 0
@@ -60,7 +64,7 @@ local function draw_summary()
 		local motorStr = "M" .. string.format("%02d", sortedList[i].id)
 		local tempStr = sortedList[i].temp .. "C"
 		lcd.drawText(5, y, motorStr, SMLSIZE)
-		local flag = sortedList[i].temp > 80 and INVERS or 0
+		local flag = sortedList[i].temp > temp_warn and INVERS or 0
 		lcd.drawText(35, y, tempStr, flag)
 		lcd.drawGauge(65, y, 55, 7, math.min(sortedList[i].temp, 100), 100)
 	end
@@ -70,7 +74,11 @@ local function draw_detail()
 		local x = ((i - 1) % 4) * 34
 		local y = math.floor((i - 1) / 4) * 8
 		local t = motorTemps[i] or "---"
-		lcd.drawText(x, y, i .. ":" .. t, SMLSIZE)
+		local flag = 0
+		if t and t > temp_warn then
+			flag = INVERS -- 超过80度黑底白字
+		end
+		lcd.drawText(x, y, i .. ":" .. t, SMLSIZE + flag)
 	end
 end
 local screens = { draw_summary, draw_detail }
