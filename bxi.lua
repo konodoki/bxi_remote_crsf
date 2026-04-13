@@ -31,7 +31,7 @@ local function draw_summary()
 	--最大5个电机
 	local sortedList = {}
 	local count = 0
-	for i = 1, 31 do
+	for i = 1, #motorTemps do
 		if motorTemps[i] then
 			count = count + 1
 			sortedList[count] = { id = i, temp = motorTemps[i] }
@@ -61,7 +61,7 @@ local function draw_summary()
 	end
 end
 local function draw_detail()
-	for i = 1, 31 do
+	for i = 1, #motorTemps do
 		local x = ((i - 1) % 4) * 34
 		local y = math.floor((i - 1) / 4) * 8
 		local t = motorTemps[i] or "---"
