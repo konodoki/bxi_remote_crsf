@@ -1,21 +1,22 @@
+#include <fcntl.h>
+#include <linux/joystick.h>
+#include <unistd.h>
+
+#include <chrono>
+#include <communication/msg/actuator_states.hpp>
+#include <communication/msg/battery_states.hpp>
 #include <communication/msg/detail/actuator_states__struct.hpp>
 #include <communication/msg/motion_commands.hpp>
-#include <communication/msg/battery_states.hpp>
-#include <communication/msg/actuator_states.hpp>
+#include <crsf_parser.hpp>
+#include <csignal>
 #include <cstdio>
-#include <linux/joystick.h>
+#include <cstring>
+#include <geometry_msgs/msg/twist_stamped.hpp>
+#include <mutex>
 #include <random>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/utilities.hpp>
-#include <unistd.h>
-#include <fcntl.h>
-#include <chrono>
-#include <mutex>
 #include <thread>
-#include <cstring>
-#include <csignal>
-#include <crsf_parser.hpp>
-#include <geometry_msgs/msg/twist_stamped.hpp>
 
 using namespace std::chrono_literals;
 using namespace std;
@@ -119,9 +120,11 @@ public:
             "battery_states", 10,
             std::bind(&RemoteControlNode::bat_callback, this,
                       std::placeholders::_1));
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
+        qos.best_effort();
         motor_sub_ =
             this->create_subscription<communication::msg::ActuatorStates>(
-                "hardware/actuator_states", 10,
+                "hardware/actuator_states", qos,
                 std::bind(&RemoteControlNode::motor_callback, this,
                           std::placeholders::_1));
         // 初始化CRSF
@@ -170,7 +173,8 @@ private:
     bool is_crsf_connected_ = false;
     communication::msg::BatteryStates lastest_bat_msg_;
     communication::msg::ActuatorStates lastest_motor_msg_;
-
+    std::chrono::high_resolution_clock::time_point lastest_motor_msg_time;
+    std::chrono::high_resolution_clock::time_point lastest_bat_msg_time;
     // 手柄相关
     std::string js_path_;
     int js_fd_ = -1;
@@ -544,10 +548,11 @@ private:
     void start_robot_program()
     {
         system("mkdir -p /var/log/bxi_log");
+        system("ros2 launch bxi_example_py_elf3 example_launch_demo_hw.py > "
+               "/var/log/bxi_log/$(date +%Y-%m-%d_%H-%M-%S)_elf.log  2>&1 &");
         system(
-            "ros2 launch bxi_example_py_elf3 example_launch_demo_hw.py > /var/log/bxi_log/$(date +%Y-%m-%d_%H-%M-%S)_elf.log  2>&1 &");
-        system(
-            "ros2 launch bxi_example_bms bms.launch.py > /var/log/bxi_log/bms_$(date +%Y-%m-%d_%H-%M-%S)_bms.log 2>&1 &");
+            "ros2 launch bxi_example_bms bms.launch.py > "
+            "/var/log/bxi_log/bms_$(date +%Y-%m-%d_%H-%M-%S)_bms.log 2>&1 &");
     }
 
     // ========== 停止机器人程序 ==========
@@ -571,11 +576,17 @@ private:
         height_filt_ = STAND_HEIGHT;
         memset(js_axis_, 0, sizeof(js_axis_));
     }
-
+    double get_dur_time(std::chrono::high_resolution_clock::time_point time)
+    {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+                   std::chrono::high_resolution_clock::now() - time)
+            .count();
+    }
     // ========== 发送电池信息 ==========
     void heartbeat_timer_callback()
     {
-        if (crsf_parser_ && is_crsf_connected_) {
+        if (crsf_parser_ && is_crsf_connected_ &&
+            get_dur_time(lastest_bat_msg_time) < 5) {
             crsf_parser_->send_battery(lastest_bat_msg_.voltage * 10,
                                        lastest_bat_msg_.current * 10,
                                        (100 - lastest_bat_msg_.soc) * 10000,
@@ -589,7 +600,8 @@ private:
     void motor_timer_callback()
     {
         static int motor_indx = 0;
-        if (crsf_parser_ && is_crsf_connected_) {
+        if (crsf_parser_ && is_crsf_connected_ &&
+            get_dur_time(lastest_motor_msg_time) < 60) {
             char textBuf[16];
             snprintf(
                 textBuf, sizeof(textBuf), "%c%c", ((char)motor_indx) + 1,
@@ -604,7 +616,7 @@ private:
             //          (char)(dist(gen)));
             crsf_parser_->send_text(textBuf);
             motor_indx++;
-            if (motor_indx >= 31)
+            if (motor_indx >= lastest_motor_msg_.motor_temperature.size())
                 motor_indx = 0;
         }
     }
@@ -624,11 +636,13 @@ private:
     void bat_callback(communication::msg::BatteryStates::SharedPtr msg)
     {
         lastest_bat_msg_ = *msg;
+        lastest_bat_msg_time = std::chrono::high_resolution_clock::now();
     }
     // =========== 电机温度订阅回调 ===========
     void motor_callback(communication::msg::ActuatorStates::SharedPtr msg)
     {
         lastest_motor_msg_ = *msg;
+        lastest_motor_msg_time = std::chrono::high_resolution_clock::now();
     }
 };
 
