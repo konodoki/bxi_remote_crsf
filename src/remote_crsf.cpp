@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <communication/msg/detail/actuator_states__struct.hpp>
 #include <communication/msg/motion_commands.hpp>
 #include <communication/msg/battery_states.hpp>
@@ -8,7 +7,6 @@
 #include <random>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/utilities.hpp>
-#include <sstream>
 #include <unistd.h>
 #include <fcntl.h>
 #include <chrono>
@@ -131,7 +129,6 @@ public:
             crsf_path, 420000,
             std::bind(&RemoteControlNode::crsf_callback, this,
                       std::placeholders::_1));
-        crsf_last_rec_time_ = std::chrono::high_resolution_clock::now();
 
         // 初始化手柄
         js_fd_ = open(js_path_.c_str(), O_RDONLY);
@@ -594,8 +591,9 @@ private:
         static int motor_indx = 0;
         if (crsf_parser_ && is_crsf_connected_) {
             char textBuf[16];
-            snprintf(textBuf, sizeof(textBuf), "%c%c", ((char)motor_indx) + 1,
-                     (char)(lastest_motor_msg_.motor_temperature[motor_indx]));
+            snprintf(
+                textBuf, sizeof(textBuf), "%c%c", ((char)motor_indx) + 1,
+                (char)round(lastest_motor_msg_.motor_temperature[motor_indx]));
 
             // std::random_device rd;
             // std::mt19937 gen(rd());
