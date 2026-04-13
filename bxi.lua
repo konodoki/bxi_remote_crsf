@@ -28,10 +28,10 @@ local function draw_summary()
 	local bat = getValue(my_batid)
 	local capa = getValue(my_capaid)
 	lcd.drawText(5, 0, vbat .. "V", 0)
-	lcd.drawText(33, 0, curr .. "A", 0)
-	lcd.drawText(81, 0, bat .. "%", 0)
+	lcd.drawText(30, 0, curr .. "A", 0)
+	lcd.drawText(51, 0, bat .. "%", 0)
 	if curr ~= 0 then
-		lcd.drawText(136, 0, capa / curr * 60 .. "min", 0)
+		lcd.drawText(90, 0, math.ceil(capa / curr * 60) .. "min", 0)
 	end
 	--最大5个电机
 	local sortedList = {}
