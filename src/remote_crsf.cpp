@@ -1,4 +1,6 @@
+#include <cmath>
 #include <fcntl.h>
+#include <geometry_msgs/msg/detail/twist_stamped__struct.hpp>
 #include <linux/joystick.h>
 #include <unistd.h>
 
@@ -117,6 +119,12 @@ public:
             "cmd_vel", 10,
             std::bind(&RemoteControlNode::velcmd_callback, this,
                       std::placeholders::_1));
+        real_vel_sub_ =
+            this->create_subscription<geometry_msgs::msg::TwistStamped>(
+                "hardware/real_speed", 10,
+                std::bind(&RemoteControlNode::realspeed_callback, this,
+                          std::placeholders::_1));
+
         bat_sub_ = this->create_subscription<communication::msg::BatteryStates>(
             "battery_states", 10,
             std::bind(&RemoteControlNode::bat_callback, this,
@@ -163,6 +171,8 @@ private:
     rclcpp::TimerBase::SharedPtr heartbeat_timer_;
     rclcpp::TimerBase::SharedPtr motor_tmp_timer_;
     rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr vel_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr
+        real_vel_sub_;
     rclcpp::Subscription<communication::msg::BatteryStates>::SharedPtr bat_sub_;
     rclcpp::Subscription<communication::msg::ActuatorStates>::SharedPtr
         motor_sub_;
@@ -174,6 +184,7 @@ private:
     bool is_crsf_connected_ = false;
     communication::msg::BatteryStates lastest_bat_msg_;
     communication::msg::ActuatorStates lastest_motor_msg_;
+    geometry_msgs::msg::TwistStamped lastest_speed_msg_;
     std::chrono::high_resolution_clock::time_point lastest_motor_msg_time;
     std::chrono::high_resolution_clock::time_point lastest_bat_msg_time;
     // 手柄相关
@@ -587,20 +598,15 @@ private:
     // ========== 发送电池信息 ==========
     void heartbeat_timer_callback()
     {
-        static const double MAX_BAT = 10; // 最大容量10Ah
         if (crsf_parser_ && is_crsf_connected_ &&
             get_dur_time(lastest_bat_msg_time) < 5) {
-            double fuel = 0;
-            if (lastest_bat_msg_.current < 0) {
-                // 放电状态下发送剩余电量
-                fuel = lastest_bat_msg_.soc / 100 * MAX_BAT;
-            } else {
-                // 充电状态下发送消耗的电量
-                fuel = (100 - lastest_bat_msg_.soc) / 100 * MAX_BAT;
-            }
+            double speed = std::sqrt(lastest_speed_msg_.twist.linear.x *
+                                         lastest_speed_msg_.twist.linear.x +
+                                     lastest_speed_msg_.twist.linear.y *
+                                         lastest_speed_msg_.twist.linear.y);
             crsf_parser_->send_battery(lastest_bat_msg_.voltage * 10,
                                        lastest_bat_msg_.current * 10,
-                                       fuel * 1000, // mah
+                                       speed * 100, // 借用这个发送速度cm/s
                                        lastest_bat_msg_.soc);
 
             // crsf_parser_->send_battery(48.5 * 10, 3.2 * 10, (100 - 44) *
@@ -654,6 +660,11 @@ private:
     {
         lastest_motor_msg_ = *msg;
         lastest_motor_msg_time = std::chrono::high_resolution_clock::now();
+    }
+    // =========== 机器速度回调 ===============
+    void realspeed_callback(geometry_msgs::msg::TwistStamped::SharedPtr msg)
+    {
+        lastest_speed_msg_ = *msg;
     }
 };
 
