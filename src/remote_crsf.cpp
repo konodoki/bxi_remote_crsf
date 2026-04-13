@@ -599,7 +599,8 @@ private:
                 fuel = (100 - lastest_bat_msg_.soc) / 100 * MAX_BAT;
             }
             crsf_parser_->send_battery(lastest_bat_msg_.voltage * 10,
-                                       lastest_bat_msg_.current * 10, fuel,
+                                       lastest_bat_msg_.current * 10,
+                                       fuel * 1000, // mah
                                        lastest_bat_msg_.soc);
 
             // crsf_parser_->send_battery(48.5 * 10, 3.2 * 10, (100 - 44) *

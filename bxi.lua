@@ -1,5 +1,6 @@
 local mid = LCD_W / 2
 local temp_warn = 80
+local temp_limit = 140
 local speed_range_channel = "ch10"
 -- 变量定义
 local my_vbatId, my_currId, my_batid, my_capaid, my_fmid
@@ -33,7 +34,7 @@ local function draw_summary()
 	lcd.drawText(36, 0, curr .. "A", 0)
 	lcd.drawText(63, 0, bat .. "%", 0)
 	if curr ~= 0 then
-		lcd.drawText(90, 0, math.ceil(capa / curr * 60) .. "min", 0)
+		lcd.drawText(90, 0, math.ceil(capa / 1000 / curr * 60) .. "min", 0)
 	end
 	local display_speed = string.format("%03.0f", (getValue(speed_range_channel) + 1000) / 10)
 	lcd.drawText(5, 54, "Max:" .. display_speed .. "%", 0)
@@ -65,8 +66,11 @@ local function draw_summary()
 		local tempStr = sortedList[i].temp .. "C"
 		lcd.drawText(5, y, motorStr, SMLSIZE)
 		local flag = sortedList[i].temp > temp_warn and INVERS or 0
+		if sortedList[i].temp >= temp_limit then
+			flag = BLINK
+		end
 		lcd.drawText(35, y, tempStr, flag)
-		lcd.drawGauge(65, y, 55, 7, math.min(sortedList[i].temp, 100), 100)
+		lcd.drawGauge(65, y, 55, 7, math.min(sortedList[i].temp, temp_limit), temp_limit)
 	end
 end
 local function draw_detail()
@@ -75,8 +79,11 @@ local function draw_detail()
 		local y = math.floor((i - 1) / 4) * 8
 		local t = motorTemps[i] or "---"
 		local flag = 0
-		if t and t > temp_warn then
-			flag = INVERS -- 超过80度黑底白字
+		if motorTemps[i] and motorTemps[i] > temp_warn then
+			flag = INVERS
+		end
+		if motorTemps[i] and motorTemps[i] > temp_limit then
+			flag = BLINK
 		end
 		lcd.drawText(x, y, i .. ":" .. t, SMLSIZE + flag)
 	end
