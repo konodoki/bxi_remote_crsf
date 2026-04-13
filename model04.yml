@@ -1,16 +1,18 @@
 semver: 2.11.5
+header: 
+   name: "bxi"
 telemetryProtocol: 0
-thrTrim: 0
+thrTrim: 1
 noGlobalFunctions: 0
 displayTrims: 0
 ignoreSensorIds: 0
 trimInc: 0
 disableThrottleWarning: 0
-displayChecklist: 0
+displayChecklist: 1
 extendedLimits: 0
 extendedTrims: 0
 throttleReversed: 0
-enableCustomThrottleWarning: 0
+enableCustomThrottleWarning: 1
 disableTelemetryWarning: 0
 showInstanceIds: 0
 checklistInteractive: 0
@@ -330,9 +332,13 @@ expoData:
    name: ""
 thrTraceSrc: Thr
 switchWarning: 
+   SA:
+      pos: up
    SB:
       pos: up
    SC:
+      pos: up
+   SD:
       pos: up
    SE:
       pos: up
@@ -341,7 +347,7 @@ rfAlarms:
    warning: 45
    critical: 42
 thrTrimSw: 0
-potsWarnMode: WARN_OFF
+potsWarnMode: WARN_AUTO
 jitterFilter: GLOBAL
 moduleData: 
    1:
@@ -365,7 +371,7 @@ inputNames:
       val: "Thr"
    3:
       val: "Rud"
-potsWarnEnabled: 1
+potsWarnEnabled: 0
 telemetrySensors: 
    0:
       id1: 

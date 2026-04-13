@@ -1,0 +1,6 @@
+SB\up = zeropos
+SB- = walk
+SB\dn = run
+SE\dn = pd
+SD\dn = start
+SD\up = stop
