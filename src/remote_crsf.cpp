@@ -245,8 +245,11 @@ private:
                 RCLCPP_WARN(this->get_logger(),
                             "Joystick disconnected, retrying...");
                 close(js_fd_);
-                while (rclcpp::ok() && js_fd_ < 0) {
-                    js_fd_ = open(js_path_.c_str(), O_RDONLY);
+                js_fd_ = -1;
+                while (rclcpp::ok()) {
+                    if (access(js_path_.c_str(), R_OK) == 0) {
+                        js_fd_ = open(js_path_.c_str(), O_RDONLY);
+                    }
                     if (js_fd_ < 0)
                         sleep(1);
                 }
