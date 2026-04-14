@@ -143,11 +143,6 @@ public:
                       std::placeholders::_1));
 
         // 初始化手柄
-        js_fd_ = open(js_path_.c_str(), O_RDONLY);
-        if (js_fd_ < 0) {
-            RCLCPP_WARN(this->get_logger(),
-                        "Failed to open joystick, will retry...");
-        }
         js_loop_thread_ = std::thread(&RemoteControlNode::js_loop, this);
 
         // 初始化状态
@@ -232,7 +227,6 @@ private:
         struct js_event event;
         while (rclcpp::ok()) {
             ssize_t len = read(js_fd_, &event, sizeof(event));
-
             if (len == sizeof(event)) {
                 const std::lock_guard<std::mutex> guard(state_mutex_);
                 if (event.type & JS_EVENT_AXIS) {
@@ -240,20 +234,29 @@ private:
                 } else if (event.type & JS_EVENT_BUTTON) {
                     handle_js_button(event.number, event.value);
                 }
-            } else {
-                // 手柄断开重连
+            } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 RCLCPP_WARN(this->get_logger(),
                             "Joystick disconnected, retrying...");
-                close(js_fd_);
-                js_fd_ = -1;
-                while (rclcpp::ok()) {
-                    if (access(js_path_.c_str(), R_OK) == 0) {
-                        js_fd_ = open(js_path_.c_str(), O_RDONLY);
-                    }
-                    if (js_fd_ < 0)
-                        sleep(1);
+                if (js_fd_ >= 0) {
+                    close(js_fd_);
+                    js_fd_ = -1;
                 }
-                RCLCPP_INFO(this->get_logger(), "Joystick reconnected");
+                while (rclcpp::ok()) {
+                    if (access(js_path_.c_str(), F_OK) != 0) {
+                        sleep(1);
+                        continue;
+                    }
+                    js_fd_ = open(js_path_.c_str(), O_RDONLY | O_NONBLOCK);
+                    if (js_fd_ >= 0) {
+                        RCLCPP_INFO(this->get_logger(),
+                                    "Joystick reconnected!");
+                        break;
+                    }
+                    RCLCPP_ERROR(this->get_logger(), "Open failed, retry...");
+                    sleep(1);
+                }
+            } else {
+                usleep(10000);
             }
         }
     }
