@@ -458,10 +458,10 @@ private:
             msg.vel_des.y = velxy_filt_[1];
             msg.yawdot_des = velr_filt_;
         } else if (crsf_channels_[CRSF_NAVCTL_CHANNEL] > 0.5) {
-            // 导航模式（无滤波）
-            msg.vel_des.x = velxy_[0];
-            msg.vel_des.y = velxy_[1];
-            msg.yawdot_des = velr_filt_;
+            // 导航模式（无滤波）这里抵消掉硬件节点的跑步速度加成
+            msg.vel_des.x = velxy_[0] / 4;
+            msg.vel_des.y = velxy_[1] * 2;
+            msg.yawdot_des = velr_ / 1.5;
         }
 
         msg.height_des = STAND_HEIGHT;
