@@ -3,6 +3,7 @@ local temp_warn = 80
 local temp_limit = 120
 local speed_range_channel = "ch10"
 local bat_capa = 10 --电池容量Ah
+local ghost_bat = 40 --百分之多少的虚电
 -- 变量定义
 local my_vbatId, my_currId, my_batid, my_capaid, my_fmid
 local motorTemps = {} -- 建立温度表
@@ -29,11 +30,13 @@ end
 local function draw_summary()
 	local vbat = getValue(my_vbatId)
 	local curr = getValue(my_currId)
-	local bat = getValue(my_batid)
-	local speed = getValue(my_capaid) --这个实际存储的是速度信息cm/s
+	local bat = (getValue(my_batid) - ghost_bat) / (100 - ghost_bat) * 100
+	local speed = getValue(my_capaid) / 100 --这个实际存储的是速度信息cm/s
 	lcd.drawText(5, 0, vbat .. "V", 0)
 	lcd.drawText(36, 0, curr .. "A", 0)
-	lcd.drawText(63, 0, bat .. "%", 0)
+	local display_bat = string.format("%3.1f", bat)
+	lcd.drawText(63, 0, display_bat .. "%", 0)
+	local capa_time = 0
 	if curr ~= 0 then
 		local capa = 0
 		if curr < 0 then --放电
@@ -41,11 +44,14 @@ local function draw_summary()
 		else --充电
 			capa = (100 - bat) / 100 * bat_capa
 		end
-		lcd.drawText(90, 0, math.ceil(capa / curr * 60) .. "min", 0)
+		capa_time = capa / curr * 60
+		local display_capa_time = string.format("%4.1f", capa_time)
+		lcd.drawText(90, 0, display_capa_time .. "min", 0)
 	end
 	local display_speed = string.format("%03.0f", (getValue(speed_range_channel) + 1000) / 10)
-	local display_read_speed = string.format("%3.1f", speed / 100)
-	lcd.drawText(5, 54, "Max:" .. display_speed .. "% Now:" .. display_read_speed .. "m/s", 0)
+	local display_read_speed = string.format("%3.1f", speed)
+	local display_km = string.format("%4.2f", math.abs(capa_time) * 60 * speed / 1000)
+	lcd.drawText(5, 54, display_speed .. "% " .. display_read_speed .. "m/s " .. display_km .. "km", 0)
 	--最大5个电机
 	local sortedList = {}
 	local count = 0

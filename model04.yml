@@ -227,8 +227,8 @@ expoData:
    offset: 0
    swtch: "NONE"
    curve: 
-      type: 1
-      value: 0
+      type: 3
+      value: 1
    chn: 2
    flightModes: 000000000
    name: ""
@@ -330,6 +330,33 @@ expoData:
    chn: 9
    flightModes: 000000000
    name: ""
+curves: 
+   0:
+      type: 1
+      smooth: 1
+      points: 1
+      name: ""
+points: 
+   0:
+      val: -100
+   1:
+      val: -50
+   2:
+      val: -15
+   3:
+      val: 14
+   4:
+      val: 53
+   5:
+      val: 100
+   6:
+      val: -71
+   7:
+      val: -26
+   8:
+      val: 26
+   9:
+      val: 73
 thrTraceSrc: Thr
 switchWarning: 
    SA:
