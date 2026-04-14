@@ -267,6 +267,8 @@ private:
             return;
         if (isAdd) {
             port_ = get_real_serial_port(port_raw_);
+            if (port_ != portName)
+                return;
             tryOpen();
         } else {
             sp_.close();
