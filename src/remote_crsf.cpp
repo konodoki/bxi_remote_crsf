@@ -370,8 +370,10 @@ private:
         // 填充模式状态
         fill_mode_state(msg);
 
-        // 发布消息
-        motion_cmd_pub_->publish(msg);
+        // 发布消息,只有有遥控器连上才发布，防止干扰其他程序
+        if (js_fd_ > 0 || is_crsf_connected_) {
+            motion_cmd_pub_->publish(msg);
+        }
     }
 
     // ========== 检查CRSF连接 ==========
