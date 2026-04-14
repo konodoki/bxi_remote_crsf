@@ -138,7 +138,7 @@ public:
                           std::placeholders::_1));
         // 初始化CRSF
         crsf_parser_ = std::make_shared<CRSFParser>(
-            crsf_path, 420000,
+            crsf_path, 460800,
             std::bind(&RemoteControlNode::crsf_callback, this,
                       std::placeholders::_1));
 
