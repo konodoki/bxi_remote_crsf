@@ -401,6 +401,8 @@ private:
     // ========== 处理CRSF控制 ==========
     void handle_crsf_control(communication::msg::MotionCommands &msg)
     {
+        if (!is_crsf_connected_)
+            return;
         // 启动/停止程序
         handle_crsf_sysctrl();
 
