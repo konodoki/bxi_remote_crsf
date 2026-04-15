@@ -32,10 +32,12 @@ local function draw_summary()
 	local curr = getValue(my_currId)
 	local bat = (getValue(my_batid) - ghost_bat) / (100 - ghost_bat) * 100
 	local speed = getValue(my_capaid) / 100 --这个实际存储的是速度信息cm/s
-	lcd.drawText(5, 0, vbat .. "V", 0)
-	lcd.drawText(36, 0, curr .. "A", 0)
+	local display_vbat = string.format("%3.1f", vbat)
+	local display_curr = string.format("%3.1f", curr)
+	lcd.drawText(0, 0, display_vbat .. "V", 0)
+	lcd.drawText(27, 0, display_curr .. "A", 0)
 	local display_bat = string.format("%3.1f", bat)
-	lcd.drawText(63, 0, display_bat .. "%", 0)
+	lcd.drawText(58, 0, display_bat .. "%", 0)
 	local capa_time = 0
 	if curr ~= 0 then
 		local capa = 0
@@ -46,7 +48,7 @@ local function draw_summary()
 		end
 		capa_time = capa / curr * 60
 		local display_capa_time = string.format("%4.1f", capa_time)
-		lcd.drawText(90, 0, display_capa_time .. "min", 0)
+		lcd.drawText(85, 0, display_capa_time .. "min", 0)
 	end
 	local display_speed = string.format("%03.0f", (getValue(speed_range_channel) + 1000) / 10)
 	local display_read_speed = string.format("%3.1f", speed)
