@@ -215,10 +215,10 @@ private:
     void crsf_callback(uint16_t channels[])
     {
         const std::lock_guard<std::mutex> guard(state_mutex_);
-        crsf_last_rec_time_ = std::chrono::high_resolution_clock::now();
         for (int i = 0; i < 16; i++) {
             crsf_channels_[i] = (channels[i] - CRSR_MID) / CRSR_SCALE;
         }
+        crsf_last_rec_time_ = std::chrono::high_resolution_clock::now();
     }
 
     // ========== 手柄循环 ==========
