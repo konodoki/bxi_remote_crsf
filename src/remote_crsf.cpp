@@ -356,14 +356,18 @@ private:
     {
         communication::msg::MotionCommands msg;
         const std::lock_guard<std::mutex> guard(state_mutex_);
-
+        static int crsf_connect_cnt = 0;
         // 检查CRSF连接状态
         check_crsf_connection();
 
         // 优先使用CRSF，断开时使用手柄
         if (is_crsf_connected_) {
-            handle_crsf_control(msg);
+            crsf_connect_cnt ++;
+            if(crsf_connect_cnt>100){
+              handle_crsf_control(msg);
+            }
         } else {
+            crsf_connect_cnt = 0;
             handle_js_control(msg);
         }
 
@@ -401,8 +405,6 @@ private:
     // ========== 处理CRSF控制 ==========
     void handle_crsf_control(communication::msg::MotionCommands &msg)
     {
-        if (!is_crsf_connected_)
-            return;
         // 启动/停止程序
         handle_crsf_sysctrl();
 
